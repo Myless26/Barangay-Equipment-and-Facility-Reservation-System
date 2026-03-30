@@ -1,16 +1,28 @@
-# React + Vite
+# BrgyHub Pro: The Modern Barangay OS 🏘️
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**BrgyHub Pro** is a state-of-the-art Multi-Tenant SaaS platform designed to digitize and revolutionize barangay operations. Built for the modern digital era, it provides a seamless interface for residents, staff, and administrators to interact, manage resources, and coordinate community benefits.
 
-Currently, two official plugins are available:
+## 🚀 Key Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Multi-Tenant Architecture**: Securely hosts multiple barangay nodes on a single infrastructure with isolated data and custom branding.
+- **Advanced Authentication**: Integrated Google OAuth and traditional RBAC (Role-Based Access Control) for secure, tiered access.
+- **Automated Security Hub**: Real-time email notifications via Gmail SMTP for login events, registrations, and subscription status.
+- **Benefit Management**: Interactive "Plans Hub" for residents to subscribe to community benefit tiers with secure payment tracking.
+- **Smart Resource Management**: Real-time facility and equipment reservation systems with automated conflict detection.
+- **AI-Powered Analytics**: Premium data visualization for barangay leaders to track revenue, resident demographics, and asset utilization.
 
-## React Compiler
+## 🛠️ Tech Stack
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+- **Frontend**: React + Vite + Tailwind CSS + Framer Motion
+- **Backend**: Node.js + Express (Proxy for secure email and captcha)
+- **Database / Auth**: Supabase (PostgreSQL + GoTrue)
+- **Communication**: Nodemailer + Gmail SMTP for real-word deliverability.
 
-## Expanding the ESLint configuration
+## 🔒 Security First
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **ReCAPTCHA v3**: Enterprise-grade bot protection on all public forms.
+- **Identity Verification**: Multi-step approval process for new residents.
+- **Encryption**: All sensitive data is handled through secure Supabase protocols and environment-based secret management.
+
+---
+*Developed for Capstone Defense 2024 — Empowering communities through digital transformation.*
