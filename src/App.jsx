@@ -220,6 +220,7 @@ const App = () => {
           console.error('[Recovery] Session data corrupt.');
         }
       }
+      setIsAuthLoading(false);
     };
     checkMockSession();
 
