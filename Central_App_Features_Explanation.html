@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Central App Features Overview</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px; }
+        h1 { color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        h2 { color: #2563eb; margin-top: 30px; }
+        h3 { color: #0f172a; margin-top: 25px; margin-bottom: 10px; }
+        p { margin-bottom: 15px; }
+        .highlight { font-weight: bold; color: #b91c1c; }
+        .footer { margin-top: 50px; font-style: italic; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Barangay Equipment and Facility Reservation System</h1>
+    <h2>Central App Features Overview</h2>
+
+    <h3>1. Add / Tenant Signup & Provisioning</h3>
+    <p><span class="highlight">How it works:</span> In the robust CentralLanding portal, there is a registration modal where new barangays can sign up. When submitted, the system first verifies the ReCAPTCHA token via the backend API to prevent spam. Then, it checks if the requested domain alias is already taken. If it's available, it inserts a new record into the tenants table in Supabase with their chosen plan, colors, and admin details. It automatically provisions an admin account for them in the authentication system and sets their initial status to active.</p>
+
+    <h3>2. Tenant Activation / Deactivation</h3>
+    <p><span class="highlight">How it works:</span> In the SuperAdminDashboard, the Super Admin has a "Toggle Status" button. Clicking this triggers a function which asks for confirmation and then updates the status column in the tenants table to either 'active' or 'disabled'. If a tenant is disabled, they are immediately restricted from accessing the platform.</p>
+
+    <h3>3. Create DB (Logical Database Isolation)</h3>
+    <p><span class="highlight">How it works:</span> Instead of creating heavy, separate physical databases for every single barangay, the system brilliantly uses <strong>Logical Isolation via Row Level Security (RLS)</strong> in Supabase. Every row in the database tables (like users, reservations, equipment) has a tenant_id. The Super Admin panel inserts the primary tenant record, and subsequent app logic uses this ID to ensure that Barangay A can never see or access Barangay B's data.</p>
+
+    <h3>4. Create Domain (System Aliases)</h3>
+    <p><span class="highlight">How it works:</span> During the tenant signup, the system captures a unique domain variable (e.g., casisang). This acts as the unique identifier and domain route (e.g., casisang.brgyhub.pro or brgyhub.pro/casisang). When users visit that specific route, the frontend queries the tenants table for that exact domain string to load the specific branding colors, features, and isolated database context for that barangay.</p>
+
+    <h3>5. Tenant Update</h3>
+    <p><span class="highlight">How it works:</span> In the SuperAdminDashboard registry tab, clicking the "Edit Metadata" on a barangay opens an edit modal. It populates the form with their current details, and upon saving, uses an "edit mode" to execute a Supabase update query to modify their name, contact info, domain, and current plan.</p>
+
+    <h3>6. Tenant Subscription Update</h3>
+    <p><span class="highlight">How it works:</span> The Super Admin can click the "Manage Subscription" icon. This opens a dedicated modal that interacts with the subscription_expires_at timestamp column in the database. The system updates this date, allowing the administrators to easily extend or revoke a barangay's subscription access to the platform.</p>
+
+    <h3>7. Tenant Notification / Email Broadcasts</h3>
+    <p><span class="highlight">How it works:</span> The "Alert Network" feature in the Super Admin dashboard utilizes a newly created notifications table. The Super Admin writes an alert payload and chooses either a specific Barangay or "Global Broadcast". The system then inserts these alerts into the database, associating them with the correct tenant_id and targeting specific user roles. The use of Supabase Realtime means these alerts can pop up instantly on the tenant's screen.</p>
+
+    <h3>8. Add Features if Needed (Feature Flags)</h3>
+    <p><span class="highlight">How it works:</span> Inside the specific "Manage Plan" modal in the Super Admin dashboard, there are toggle switches for "Advanced Analytics" and "Custom Branding". These interact with a features JSONB column in the database. The frontend updates this JSON object (e.g., {"analytics": true, "custom_branding": false}). The Tenant App then checks this JSON object to conditionally show or hide premium UI features dynamically.</p>
+
+    <div class="footer">
+        Prepared for the 7:00 AM Presentation Update.
+    </div>
+</body>
+</html>
