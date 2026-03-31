@@ -456,9 +456,8 @@ const Login = ({ onLogin, tenant }) => {
                                 <div className="relative group">
                                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-secondary transition-colors" size={18} />
                                     <input
-                                        type="email"
-                                        value={recoveryEmailValue}
-                                        onChange={(e) => setRecoveryEmailValue(e.target.value)}
+                                        value={recoveryEmail}
+                                        onChange={(e) => setRecoveryEmail(e.target.value)}
                                         className="w-full bg-slate-900/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-secondary transition-all text-slate-100 placeholder:text-slate-600"
                                         placeholder="backup@example.com"
                                     />
