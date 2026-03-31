@@ -145,7 +145,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
                 .select('id')
                 .eq('domain', formData.domain.toLowerCase());
 
-            if (existingDomain) {
+            if (existingDomain && existingDomain.length > 0) {
                 setError('That domain is already taken. Please choose another.');
                 setIsSubmitting(false);
                 return;
