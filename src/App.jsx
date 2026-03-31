@@ -27,20 +27,30 @@ import { sendCommunityEmail, EmailTemplates } from './utils/EmailService';
 
 
 const App = () => {
+  const getPersistedProfile = () => {
+    const persisted = localStorage.getItem('brgy_mock_profile');
+    const remember = localStorage.getItem('brgy_remember_me') === 'true';
+    if (persisted && remember) {
+      try { return JSON.parse(persisted); } catch (e) { return null; }
+    }
+    return null;
+  };
+  const initialProfile = getPersistedProfile();
+
   const [currentTenant, setCurrentTenant] = useState(null);
   const [isLoadingTenant, setIsLoadingTenant] = useState(true);
-  const [currentRole, setCurrentRole] = useState(null);
+  const [currentRole, setCurrentRole] = useState(initialProfile ? initialProfile.role : null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(!!initialProfile);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutProgress, setLogoutProgress] = useState(0);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingType, setBookingType] = useState('Facility');
-  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(initialProfile);
   const [userPlan, setUserPlan] = useState(null);
   const [notification, setNotification] = useState({ isVisible: false, message: '', type: 'info' });
-  const [isSuperAdminAuthenticated, setIsSuperAdminAuthenticated] = useState(false);
+  const [isSuperAdminAuthenticated, setIsSuperAdminAuthenticated] = useState(initialProfile ? initialProfile.role === 'Super Admin' : false);
   const [confirmState, setConfirmState] = useState({
     isVisible: false,
     title: '',
@@ -562,12 +572,7 @@ const App = () => {
       <NotificationContext.Provider value={{ notify }}>
         <ConfirmationContext.Provider value={{ confirmAction }}>
           <div className="min-h-screen bg-background text-slate-200 selection:bg-primary/20">
-            {(isAuthLoading || (isAuthenticated && !currentRole)) ? (
-              <div className="min-h-screen flex flex-col items-center justify-center space-y-4">
-                <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                <p className="text-primary font-black tracking-[0.2em] uppercase text-xs">Calibrating Access...</p>
-              </div>
-            ) : !isAuthenticated && !isSuperAdminAuthenticated ? (
+            {(!isAuthenticated && !isSuperAdminAuthenticated) ? (
               <CentralLanding
                 setSuperAdminAuth={(profile, rememberMe) => {
                   setCurrentUserProfile(profile);
