@@ -865,6 +865,18 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
         setIsCreating(true);
         try {
             const sanitizedDomain = newTenant.domain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+            // Verify domain uniqueness
+            let domainQuery = supabase.from('tenants').select('id').eq('domain', sanitizedDomain);
+            if (editingId) domainQuery = domainQuery.neq('id', editingId);
+            const { data: existingDomain } = await domainQuery;
+
+            if (existingDomain && existingDomain.length > 0) {
+                notify(`The domain "${sanitizedDomain}" is already taken. Please choose another one.`, 'error');
+                setIsCreating(false);
+                return;
+            }
+
             let executedTenant = null;
             if (editingId) {
                 const { data, error } = await supabase.from('tenants').update({

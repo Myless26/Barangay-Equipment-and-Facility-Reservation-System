@@ -142,9 +142,8 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
             // Check domain availability first
             const { data: existingDomain } = await supabase
                 .from('tenants')
-                .select('domain')
-                .eq('domain', formData.domain.toLowerCase())
-                .single();
+                .select('id')
+                .eq('domain', formData.domain.toLowerCase());
 
             if (existingDomain) {
                 setError('That domain is already taken. Please choose another.');
