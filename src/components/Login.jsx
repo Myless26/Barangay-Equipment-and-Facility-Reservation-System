@@ -19,9 +19,12 @@ const Login = ({ onLogin, tenant }) => {
     const [availableTenants, setAvailableTenants] = useState([]);
     const [selectedTenantId, setSelectedTenantId] = useState('');
     const [showRecovery, setShowRecovery] = useState(false);
+    const [recoveryStep, setRecoveryStep] = useState(1);
     const [newPassword, setNewPassword] = useState('');
     const [requestedRole, setRequestedRole] = useState('Resident');
-    const [recoveryEmailValue, setRecoveryEmailValue] = useState('');
+    const [recoveryEmail, setRecoveryEmail] = useState('');
+    const [recoveryPin, setRecoveryPin] = useState('');
+    const [sentPin, setSentPin] = useState('123456');
     const [availablePlans, setAvailablePlans] = useState([]);
     const [selectedPlanId, setSelectedPlanId] = useState('');
 
