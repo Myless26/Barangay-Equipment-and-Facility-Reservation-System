@@ -865,13 +865,14 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
         setIsCreating(true);
         try {
             const sanitizedDomain = newTenant.domain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            let executedTenant = null;
             if (editingId) {
                 const { data, error } = await supabase.from('tenants').update({
                     name: newTenant.name, domain: sanitizedDomain, plan: newTenant.plan,
                     contact_name: newTenant.contact_name, contact_email: newTenant.contact_email, status: newTenant.status
                 }).eq('id', editingId).select().single();
                 if (error) throw error;
-                // FIXED: Using functional update to prevent data loss (stale state closure)
+                executedTenant = data;
                 setTenants(prev => prev.map(t => t.id === editingId ? data : t).sort((a, b) => a.name.localeCompare(b.name)));
             } else {
                 const { data, error } = await supabase.from('tenants').insert([{
@@ -879,19 +880,28 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
                     contact_name: newTenant.contact_name, contact_email: newTenant.contact_email, status: newTenant.status
                 }]).select().single();
                 if (error) throw error;
-                // FIXED: Functional update with re-sorting for a safe, atomic deployment
+                executedTenant = data;
                 setTenants(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+
+                // Auto-Provision Plans for new sector
+                if (data && data.id) {
+                    await supabase.from('plans').insert([
+                        { name: 'Standard Resident', price: 99, tenant_id: data.id },
+                        { name: 'Premium Resident', price: 199, tenant_id: data.id },
+                        { name: 'Business Enterprise', price: 499, tenant_id: data.id }
+                    ]);
+                }
             }
 
             // Sync with Authentication System
             const users = JSON.parse(localStorage.getItem('brgy_hub_users') || '[]');
-            if (!users.find(u => u.email === newTenant.contact_email)) {
+            if (executedTenant && newTenant.contact_email && !users.find(u => u.email === newTenant.contact_email)) {
                 users.push({
                     email: newTenant.contact_email,
                     password: newTenant.password || 'admin123',
                     name: newTenant.contact_name,
                     role: 'Barangay Admin',
-                    tenant_id: data.id
+                    tenant_id: executedTenant.id
                 });
                 localStorage.setItem('brgy_hub_users', JSON.stringify(users));
                 console.log('[AuthSync] Barangay Admin credentials provisioned.');

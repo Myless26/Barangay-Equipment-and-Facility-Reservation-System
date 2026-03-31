@@ -125,7 +125,7 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY, onPlanUpdate = () => { 
                 .from('resident_plans')
                 .select('*, plans(*), user_profiles(*)')
                 .eq('status', 'Active')
-                .order('approved_at', { ascending: false });
+                .order('applied_at', { ascending: false });
 
             if (currentTenant?.id) {
                 query = query.eq('tenant_id', currentTenant.id);
@@ -148,11 +148,11 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY, onPlanUpdate = () => { 
 
     const fetchResidents = async () => {
         try {
-            let query = supabase.from('residents').select('*');
+            let query = supabase.from('user_profiles').select('*').eq('role', 'Resident');
             if (currentTenant?.id) query = query.eq('tenant_id', currentTenant.id);
             else if (currentRole === 'Super Admin' && selectedTenantId !== 'all') query = query.eq('tenant_id', selectedTenantId);
 
-            const { data, error } = await query.order('name');
+            const { data, error } = await query.order('full_name');
             if (error) throw error;
             setResidents(data || []);
         } catch (err) {
