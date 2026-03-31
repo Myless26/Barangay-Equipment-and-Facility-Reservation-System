@@ -349,6 +349,7 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
                         allUsers={allUsers}
                         onToggleStatus={handleToggleStatus}
                         onEdit={openEditModal}
+                        onDelete={handleDeleteTenant}
                     />
                 );
             case 'residents':
@@ -652,7 +653,7 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
         );
     };
 
-    const TenantManagementView = ({ tenants, allUsers, onToggleStatus, onEdit }) => {
+    const TenantManagementView = ({ tenants, allUsers, onToggleStatus, onEdit, onDelete }) => {
         const [selectedTenantId, setSelectedTenantId] = useState(null);
 
         return (
@@ -729,6 +730,13 @@ const SuperAdminDashboard = ({ setSuperAdminAuth, onLogout }) => {
                                                 className={`px-5 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${tenant.status === 'active' ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white'}`}
                                             >
                                                 {tenant.status === 'active' ? 'Deactivate' : 'Activate'}
+                                            </button>
+                                            <button
+                                                onClick={() => onDelete(tenant.id)}
+                                                title="Delete Sector"
+                                                className="p-3 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all border border-red-500/20 ml-2"
+                                            >
+                                                <Trash2 size={20} />
                                             </button>
                                         </div>
                                     </div>
