@@ -9,9 +9,13 @@ import { sendCommunityEmail, EmailTemplates } from '../utils/EmailService';
 export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
     const [showRegister, setShowRegister] = useState(false);
     const [showLogin, setShowLogin] = useState(false);
-    const [activeTenants, setActiveTenants] = useState([]);
+    const [activeTenants, setActiveTenants] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('brgy_cached_tenants')) || []; } catch { return []; }
+    });
     const [docView, setDocView] = useState('home'); // 'home', 'isolation', 'provisioning'
-    const [isLoadingTenants, setIsLoadingTenants] = useState(true);
+    const [isLoadingTenants, setIsLoadingTenants] = useState(() => {
+        try { return !localStorage.getItem('brgy_cached_tenants'); } catch { return true; }
+    });
     const [selectedTenantForLogin, setSelectedTenantForLogin] = useState(null);
 
     const [formData, setFormData] = useState({
@@ -31,7 +35,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
     }, []);
 
     const fetchActiveTenants = async () => {
-        setIsLoadingTenants(true);
+        if (!localStorage.getItem('brgy_cached_tenants')) setIsLoadingTenants(true);
         try {
             const { data, error } = await supabase
                 .from('tenants')
@@ -82,6 +86,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
             }
 
             setActiveTenants(fetched);
+            localStorage.setItem('brgy_cached_tenants', JSON.stringify(fetched));
         } catch (err) {
             console.error('Error fetching tenants:', err);
         } finally {
