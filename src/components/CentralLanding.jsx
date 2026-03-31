@@ -20,8 +20,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
         plan: 'Basic',
         contact_name: '',
         contact_email: '',
-        password: '',
-        theme_color: '#3B82F6'
+        password: ''
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -45,7 +44,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
             let fetched = data || [];
 
             // Filter out the test and default tenants requested for removal, plus newly deleted ones
-            fetched = fetched.filter(t => !['test', 'default', 'bulua', 'nazareth'].includes(t.domain));
+            fetched = fetched.filter(t => !['test', 'default', 'bulua', 'nazareth', 'iponan'].includes(t.domain));
 
             // Auto-provision the requested Barangays if they don't exist yet, ignoring permanently purged ones
             const requiredDomains = ['carmen', 'gusa'];
@@ -53,26 +52,31 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
             const missingDomains = requiredDomains.filter(d => !fetched.some(t => t.domain === d) && !purgedDomains.includes(d));
 
             if (missingDomains.length > 0) {
+                console.log('[Provisioning] Missing domains detected:', missingDomains);
                 const newBarangays = missingDomains.map(domain => {
                     const nameMap = { carmen: 'Barangay Carmen', gusa: 'Barangay Gusa', bulua: 'Barangay Bulua', nazareth: 'Barangay Nazareth' };
                     const colorMap = { carmen: '#3B82F6', gusa: '#10B981', bulua: '#F59E0B', nazareth: '#8B5CF6' };
                     return {
-                        name: nameMap[domain],
+                        name: nameMap[domain] || `Barangay ${domain}`,
                         domain: domain,
                         plan: 'Enterprise',
                         contact_name: 'Admin',
-                        contact_email: 'angkolrogar69@gmail.com',
-                        status: 'active',
-                        theme_color: colorMap[domain]
+                        contact_email: 'admin@system.brgy',
+                        status: 'active'
                     };
                 });
 
-                // Insert missing
-                await supabase.from('tenants').insert(newBarangays);
+                // Attempt insert but DO NOT block the UI loading
+                supabase.from('tenants').insert(newBarangays)
+                    .then(({ error }) => {
+                        if (error) console.warn('[Provisioning] Auto-provisioning rejected (expected if not admin):', error.message);
+                        else console.log('[Provisioning] Auto-provisioning success.');
+                    })
+                    .catch(e => console.error('[Provisioning] Auto-provisioning error:', e));
 
-                // Add to view immediately
+                // Add to view immediately for demo feel
                 newBarangays.forEach(nb => {
-                    nb.id = Math.random().toString();
+                    nb.id = `temp-${Math.random()}`;
                     fetched.push(nb);
                 });
             }
@@ -160,12 +164,21 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
                     plan: formData.plan,
                     contact_name: formData.contact_name,
                     contact_email: formData.contact_email,
-                    theme_color: formData.theme_color,
                     subscription_expires_at: expireDate.toISOString(),
-                    status: 'active' // Auto-approve for demonstration
+                    status: 'active'
                 }]);
 
             if (insertError) throw insertError;
+
+            // Provision Initial Plans for the new Tenant
+            const { data: newTenant } = await supabase.from('tenants').select('id').eq('domain', formData.domain.toLowerCase()).single();
+            if (newTenant) {
+                await supabase.from('plans').insert([
+                    { name: 'Standard Resident', price: 99, tenant_id: newTenant.id },
+                    { name: 'Premium Resident', price: 199, tenant_id: newTenant.id },
+                    { name: 'Business Enterprise', price: 499, tenant_id: newTenant.id }
+                ]);
+            }
 
             // Sync with Authentication System
             const users = JSON.parse(localStorage.getItem('brgy_hub_users') || '[]');
@@ -195,7 +208,7 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
 
             setTimeout(() => {
                 setShowRegister(false);
-                setFormData({ name: '', domain: '', plan: 'Basic', contact_name: '', contact_email: '', password: '', theme_color: '#3B82F6' });
+                setFormData({ name: '', domain: '', plan: 'Basic', contact_name: '', contact_email: '', password: '' });
             }, 5000);
 
         } catch (err) {
@@ -471,21 +484,6 @@ export default function CentralLanding({ setSuperAdminAuth, setTenantAuth }) {
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                         />
 
-                                        <div className="md:col-span-2">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block border-l-2 border-primary/50 pl-2">Brand Identity Color</label>
-                                            <div className="flex items-center gap-4 bg-black/40 border border-white/10 rounded-xl md:rounded-2xl p-4">
-                                                <input
-                                                    type="color"
-                                                    value={formData.theme_color}
-                                                    onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })}
-                                                    className="w-10 h-10 rounded cursor-pointer border-none bg-transparent"
-                                                />
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold uppercase tracking-widest text-white">Hex Code</span>
-                                                    <span className="text-[10px] font-black text-slate-500 mt-0.5">{formData.theme_color}</span>
-                                                </div>
-                                            </div>
-                                        </div>
                                     </div>
 
                                     <div className="flex justify-center mt-6 relative z-10 w-full text-[9px] text-slate-500 text-center font-bold">

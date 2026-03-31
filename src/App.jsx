@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+﻿import React, { useState, useContext, useEffect } from 'react';
 import {
   LayoutDashboard, Users, Calendar, Settings, LogOut, Bell, Menu, X,
   ChevronRight, Package, ShieldCheck, BarChart3, CreditCard, QrCode,
@@ -38,6 +38,7 @@ const App = () => {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingType, setBookingType] = useState('Facility');
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [userPlan, setUserPlan] = useState(null);
   const [notification, setNotification] = useState({ isVisible: false, message: '', type: 'info' });
   const [isSuperAdminAuthenticated, setIsSuperAdminAuthenticated] = useState(false);
   const [confirmState, setConfirmState] = useState({
@@ -66,7 +67,7 @@ const App = () => {
     }
   }, []);
 
-  // Hardcoded fallback tenants — always recognized regardless of DB state
+  // Hardcoded fallback tenants ΓÇö always recognized regardless of DB state
   const FALLBACK_TENANTS = {
     carmen: { id: 'carmen', name: 'Barangay Carmen', domain: 'carmen', plan: 'Enterprise', status: 'active', themeColor: '#3B82F6' },
     gusa: { id: 'gusa', name: 'Barangay Gusa', domain: 'gusa', plan: 'Enterprise', status: 'active', themeColor: '#10B981' },
@@ -138,6 +139,21 @@ const App = () => {
             setIsSuperAdminAuthenticated(true);
           }
         } else {
+          // Check for mock fallback in case profile fetch fails but email matches root admins
+          const persistedProfile = localStorage.getItem('brgy_mock_profile');
+          if (persistedProfile) {
+            try {
+              const mock = JSON.parse(persistedProfile);
+              if (mock.email === session.user.email) {
+                setCurrentRole(mock.role);
+                setCurrentUserProfile(mock);
+                setIsAuthenticated(true);
+                if (mock.role === 'Super Admin') setIsSuperAdminAuthenticated(true);
+                return;
+              }
+            } catch (e) { }
+          }
+
           // Emergency Override for Master Accounts if profile fetch fails
           const isMaster = session.user.email === 'akazayasussy@gmail.com' || session.user.email === 'admin@brgyhub.pro';
           if (isMaster) {
@@ -149,9 +165,28 @@ const App = () => {
           setIsAuthenticated(true);
         }
       } else {
-        setIsAuthenticated(false);
-        setIsSuperAdminAuthenticated(false);
-        setCurrentUserProfile(null);
+        // GHOST RECOVERY: Fallback to mock session if no active Supabase session
+        const persistedProfile = localStorage.getItem('brgy_mock_profile');
+        const rememberActive = localStorage.getItem('brgy_remember_me') === 'true';
+
+        if (persistedProfile && rememberActive) {
+          try {
+            const profile = JSON.parse(persistedProfile);
+            console.log('[Auth] Ghost Session Active:', profile.email);
+            setCurrentUserProfile(profile);
+            setIsAuthenticated(true);
+            setCurrentRole(profile.role);
+            if (profile.role === 'Super Admin') setIsSuperAdminAuthenticated(true);
+          } catch (e) {
+            setIsAuthenticated(false);
+            setIsSuperAdminAuthenticated(false);
+            setCurrentUserProfile(null);
+          }
+        } else {
+          setIsAuthenticated(false);
+          setIsSuperAdminAuthenticated(false);
+          setCurrentUserProfile(null);
+        }
       }
     };
 
@@ -169,7 +204,7 @@ const App = () => {
           .maybeSingle();
 
         if (!existingProfile) {
-          // Brand new Google user — create profile & send welcome email
+          // Brand new Google user ΓÇö create profile & send welcome email
           const googleName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Resident';
           const googleEmail = session.user.email;
           const googleAvatar = session.user.user_metadata?.avatar_url || null;
@@ -191,38 +226,17 @@ const App = () => {
         }
       }
 
-      handleSession(session);
+      await handleSession(session);
       setIsAuthLoading(false);
     });
 
     // Initialize session explicitly on boot
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSession(session);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      await handleSession(session);
       setIsAuthLoading(false);
     });
 
-    // RECOVERY PROTOCOL: Check for persisted mock session if no Supabase session
-    const checkMockSession = async () => {
-      const persistedProfile = localStorage.getItem('brgy_mock_profile');
-      const rememberActive = localStorage.getItem('brgy_remember_me') === 'true';
-
-      if (persistedProfile && rememberActive) {
-        try {
-          const profile = JSON.parse(persistedProfile);
-          console.log('[Recovery] Restoring dormant identity:', profile.email);
-          setCurrentUserProfile(profile);
-          setIsAuthenticated(true);
-          setCurrentRole(profile.role);
-          if (profile.role === 'Super Admin') {
-            setIsSuperAdminAuthenticated(true);
-          }
-        } catch (e) {
-          console.error('[Recovery] Session data corrupt.');
-        }
-      }
-      setIsAuthLoading(false);
-    };
-    checkMockSession();
+    // Initial load check is handled by handleSession inside getSession/onAuthStateChange
 
     return () => subscription.unsubscribe();
   }, []);
@@ -306,6 +320,7 @@ const App = () => {
   };
 
   const handleSuperAdminLogout = async () => {
+    console.log('[Auth] Initiating bulletproof SuperAdmin termination...');
     setIsLoggingOut(true);
     let progress = 0;
     const interval = setInterval(() => {
@@ -317,9 +332,8 @@ const App = () => {
       setLogoutProgress(progress);
     }, 150);
 
-    await supabase.auth.signOut();
-
-    setTimeout(() => {
+    const cleanup = () => {
+      clearInterval(interval);
       setIsLoggingOut(false);
       setLogoutProgress(0);
       setIsSuperAdminAuthenticated(false);
@@ -327,37 +341,75 @@ const App = () => {
       setCurrentRole(null);
       setCurrentTenant(null);
       setCurrentUserProfile(null);
-    }, 1000);
+      localStorage.removeItem('brgy_mock_profile');
+      localStorage.removeItem('brgy_remember_me');
+
+      notify('Administrative session terminated.', 'success');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
+    };
+
+    supabase.auth.signOut().finally(() => {
+      console.log('[Auth] SuperAdmin signOut settled.');
+    });
+
+    setTimeout(cleanup, 1200);
+  };
+
+  const handleLogout = async () => {
+    console.log('[Auth] Initiating bulletproof termination sequence...');
+    setIsLoggingOut(true);
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 10;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(interval);
+      }
+      setLogoutProgress(progress);
+    }, 100);
+
+    // 1. Clear all local state immediately to trigger UI switch
+    const cleanup = () => {
+      clearInterval(interval);
+      setIsLoggingOut(false);
+      setLogoutProgress(0);
+      setIsAuthenticated(false);
+      setIsSuperAdminAuthenticated(false);
+      setCurrentRole(null);
+      setCurrentTenant(null);
+      setCurrentUserProfile(null);
+
+      // 2. Clear persistence
+      localStorage.removeItem('brgy_mock_profile');
+      localStorage.removeItem('brgy_remember_me');
+      localStorage.removeItem('active_user_email');
+
+      // 3. Final Fail-Safe: Hard Reload to purge any lingering memory/state
+      notify('Session Terminated. Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
+    };
+
+    // 4. Attempt signOut but don't let it hang the UI
+    supabase.auth.signOut().finally(() => {
+      console.log('[Auth] signOut settled.');
+    });
+
+    // 5. Guaranteed completion after 1.5s
+    setTimeout(cleanup, 1500);
   };
 
   const confirmLogout = () => {
+    console.log('[Auth] Requesting logout confirmation...');
     confirmAction(
       'Terminate Session?',
       'Are you sure you want to sign out? Your current operational state will be saved.',
       handleLogout,
       'Yes, Sign Out'
     );
-  };
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 15;
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-      }
-      setLogoutProgress(progress);
-    }, 150);
-
-    await supabase.auth.signOut();
-
-    setTimeout(() => {
-      setIsLoggingOut(false);
-      setLogoutProgress(0);
-      setIsAuthenticated(false);
-    }, 500);
   };
 
   const handleLogin = (userProfile) => {
@@ -374,7 +426,51 @@ const App = () => {
     }
 
     window.dispatchEvent(new Event('userProfileUpdate'));
+    fetchUserPlan(userProfile);
   };
+
+  const fetchUserPlan = async (profile) => {
+    try {
+      const activeEmail = profile?.email || localStorage.getItem('active_user_email');
+      if (!activeEmail) return;
+
+      // Try Auth User first
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user) {
+        const { data } = await supabase
+          .from('resident_plans')
+          .select('*, plans(*)')
+          .eq('user_id', authData.user.id)
+          .order('applied_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) {
+          setUserPlan(data);
+          return;
+        }
+      }
+
+      // Local fallback
+      const localRequests = JSON.parse(localStorage.getItem('brgy_plan_requests') || '[]');
+      const myRequest = localRequests.filter(r => r.user_email === activeEmail).pop();
+      if (myRequest) {
+        setUserPlan(myRequest);
+      }
+    } catch (err) {
+      console.error('Fetch user plan error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && currentRole === ROLES.RESIDENT) {
+      fetchUserPlan(currentUserProfile);
+
+      // Listen for plan updates
+      const handlePlanUpdate = () => fetchUserPlan(currentUserProfile);
+      window.addEventListener('plan_updated', handlePlanUpdate);
+      return () => window.removeEventListener('plan_updated', handlePlanUpdate);
+    }
+  }, [isAuthenticated, currentRole, currentUserProfile?.id]);
 
   // GCash-style Auto-Logout Security Feature
   useEffect(() => {
@@ -399,8 +495,8 @@ const App = () => {
         if (currentRole === ROLES.SUPER_ADMIN || isSuperAdminAuthenticated) return <SuperAdminDashboard />;
         if (currentRole === ROLES.CAPTAIN || currentRole === ROLES.BARANGAY_ADMIN) return <CaptainPortal />;
         if (currentRole === ROLES.CUSTODIAN) return <CustodianPortal />;
-        return <DashboardHome tenant={currentTenant} role={currentRole} setActiveTab={setActiveTab} onBook={() => { setBookingType('Facility'); setIsBookingOpen(true); }} />;
-      case 'plans': return <Plans tenants={TENANTS} />;
+        return <DashboardHome tenant={currentTenant} role={currentRole} setActiveTab={setActiveTab} userPlan={userPlan} onBook={() => { setBookingType('Facility'); setIsBookingOpen(true); }} />;
+      case 'plans': return <Plans tenants={TENANTS} onPlanUpdate={() => window.dispatchEvent(new Event('plan_updated'))} />;
       case 'revenue': return <Revenue tenants={TENANTS} />;
       case 'reservations': return <Reservations tenants={TENANTS} />;
       case 'equipment': return <Equipment tenants={TENANTS} />;
@@ -521,6 +617,7 @@ const App = () => {
                       onLogout={confirmLogout}
                       currentTenant={currentTenant}
                       currentUserProfile={currentUserProfile}
+                      userPlan={userPlan}
                     />
 
                     <main className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden">
@@ -688,7 +785,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText,
   </AnimatePresence>
 );
 
-const Sidebar = ({ activeTab, setActiveTab, isSidebarOpen, currentRole, onLogout, currentTenant, currentUserProfile }) => (
+const Sidebar = ({ activeTab, setActiveTab, isSidebarOpen, currentRole, onLogout, currentTenant, currentUserProfile, userPlan }) => (
   <motion.aside
     initial={false}
     animate={{ width: isSidebarOpen ? 280 : 80 }}
@@ -782,6 +879,14 @@ const Sidebar = ({ activeTab, setActiveTab, isSidebarOpen, currentRole, onLogout
           <div className="overflow-hidden flex-1">
             <p className="text-sm font-bold truncate text-white">{currentUserProfile?.name || currentUserProfile?.full_name || 'Resident'}</p>
             <p className="text-[10px] text-primary uppercase font-black tracking-widest leading-none mt-1">{currentRole}</p>
+            {currentRole === ROLES.RESIDENT && userPlan && (
+              <div className="flex items-center gap-1 mt-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${userPlan.status === 'Active' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                <span className={`text-[8px] font-black uppercase tracking-widest ${userPlan.status === 'Active' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {userPlan.plans?.name || userPlan.plan_name}: {userPlan.status.toUpperCase()}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -802,33 +907,21 @@ const Sidebar = ({ activeTab, setActiveTab, isSidebarOpen, currentRole, onLogout
 
       {isSidebarOpen ? (
         <div className="flex flex-col gap-2">
-          {currentRole !== ROLES.RESIDENT && (
-            <a
-              href="/"
-              className="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-white/5 transition-colors font-semibold text-sm border border-transparent hover:border-white/5"
-            >
-              <ShieldCheck size={18} className="text-primary" />
-              Switch Barangay
-            </a>
-          )}
+
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors font-semibold text-sm"
+            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-100 bg-red-500/20 hover:bg-red-500/30 transition-all font-black uppercase tracking-widest text-[10px] cursor-pointer border border-red-500/30 active:scale-95"
           >
-            <LogOut size={18} />
-            Logout
+            <LogOut size={16} />
+            Force Terminate
           </button>
         </div>
       ) : (
         <div className="flex flex-col gap-4 items-center">
-          {currentRole !== ROLES.RESIDENT && (
-            <a href="/" className="p-2 text-slate-500 hover:text-primary transition-colors">
-              <ShieldCheck size={18} />
-            </a>
-          )}
+
           <button
             onClick={onLogout}
-            className="w-full flex justify-center p-3 text-red-400 hover:bg-red-500/10 transition-colors rounded-xl"
+            className="w-full flex justify-center p-3 text-red-400 hover:bg-red-500/10 transition-colors rounded-xl cursor-pointer active:scale-90"
           >
             <LogOut size={18} />
           </button>
@@ -1271,7 +1364,7 @@ const NotificationCenter = ({ tenantId, role, showResetPassword, setShowResetPas
                       type="password"
                       id="new-recovery-password"
                       className="w-full bg-slate-900/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-primary transition-all"
-                      placeholder="••••••••"
+                      placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
                     />
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, LogIn, Mail, Lock, User, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, LogIn, Mail, Lock, User, CheckCircle2, Eye, EyeOff, CreditCard } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendCommunityEmail, EmailTemplates } from '../utils/EmailService';
 import { NotificationContext } from '../contexts/AppContext';
@@ -22,6 +22,8 @@ const Login = ({ onLogin, tenant }) => {
     const [newPassword, setNewPassword] = useState('');
     const [requestedRole, setRequestedRole] = useState('Resident');
     const [recoveryEmailValue, setRecoveryEmailValue] = useState('');
+    const [availablePlans, setAvailablePlans] = useState([]);
+    const [selectedPlanId, setSelectedPlanId] = useState('');
 
     const [rememberMe, setRememberMe] = useState(true);
 
@@ -34,6 +36,20 @@ const Login = ({ onLogin, tenant }) => {
             fetchTenants();
         }
     }, [tenant]);
+
+    React.useEffect(() => {
+        const fetchPlans = async () => {
+            const targetTenantId = tenant ? tenant.id : selectedTenantId;
+            if (targetTenantId && !isLogin && requestedRole === 'Resident') {
+                const { data } = await supabase.from('plans').select('id, name, price').eq('tenant_id', targetTenantId);
+                if (data) {
+                    setAvailablePlans(data);
+                    if (data.length > 0 && !selectedPlanId) setSelectedPlanId(data[0].id);
+                }
+            }
+        };
+        fetchPlans();
+    }, [selectedTenantId, tenant, isLogin, requestedRole]);
 
     const handleGoogleLogin = async () => {
         try {
@@ -68,14 +84,20 @@ const Login = ({ onLogin, tenant }) => {
         }
 
         try {
-            // Generate v3 Token Programmatically
+            // Generate v3 Token Programmatically (Bypass in development)
             const token = await new Promise((resolve, reject) => {
+                if (import.meta.env.DEV) {
+                    console.log('[ReCAPTCHA] Development mode: Bypassing client-side verification.');
+                    resolve('development-token');
+                    return;
+                }
                 if (!window.grecaptcha) {
                     reject('Security Gateway offline.');
                     return;
                 }
+                const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6Ld3d54sAAAAAP3EvXEE-aBUFztxop7HE_eHNvAY';
                 window.grecaptcha.ready(() => {
-                    window.grecaptcha.execute('6Ld3d54sAAAAAP3EvXEE-aBUFztxop7HE_eHNvAY', { action: 'login' })
+                    window.grecaptcha.execute(siteKey, { action: 'login' })
                         .then(resolve)
                         .catch(reject);
                 });
@@ -220,6 +242,17 @@ const Login = ({ onLogin, tenant }) => {
                 }]);
 
                 if (profileError) throw profileError;
+
+                // Create Initial Plan Request if Resident
+                if (requestedRole === 'Resident' && selectedPlanId) {
+                    const { error: planReqError } = await supabase.from('resident_plans').insert([{
+                        user_id: user.id,
+                        plan_id: selectedPlanId,
+                        tenant_id: targetTenantId,
+                        status: 'Pending'
+                    }]);
+                    if (planReqError) console.error('Plan Request Error:', planReqError.message);
+                }
 
                 // Save optional recovery email locally (not in DB — used on recovery screen)
                 if (recoveryEmailValue.trim()) {
@@ -444,6 +477,29 @@ const Login = ({ onLogin, tenant }) => {
                                             <option value="" className="bg-slate-900">Select Your Community...</option>
                                             {availableTenants.map(t => (
                                                 <option key={t.id} value={t.id} className="bg-slate-900">{t.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {requestedRole === 'Resident' && availablePlans.length > 0 && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black tracking-widest text-slate-500 uppercase ml-1">Select Subscription Plan</label>
+                                    <div className="relative group">
+                                        <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-secondary transition-colors" size={18} />
+                                        <select
+                                            value={selectedPlanId}
+                                            onChange={(e) => setSelectedPlanId(e.target.value)}
+                                            className="w-full bg-slate-900/50 border border-white/10 rounded-2xl py-4 pl-12 pr-10 focus:outline-none focus:border-secondary transition-all text-slate-100 appearance-none cursor-pointer"
+                                        >
+                                            {availablePlans.map(p => (
+                                                <option key={p.id} value={p.id} className="bg-slate-900">
+                                                    {p.name} — ₱{p.price}/mo
+                                                </option>
                                             ))}
                                         </select>
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">

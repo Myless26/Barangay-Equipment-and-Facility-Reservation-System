@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CreditCard, CheckCircle2, X, Zap, ShieldCheck, Tag, Plus, UserPlus, Globe, Building, RefreshCw, Activity, Clock, ArrowRight, Smartphone, Wallet, Star } from 'lucide-react';
+import { CreditCard, CheckCircle2, X, Zap, ShieldCheck, Tag, Plus, UserPlus, Globe, Building, RefreshCw, Activity, Clock, ArrowRight, Smartphone, Wallet, Star, Users } from 'lucide-react';
 import { NotificationContext, TenantContext, ConfirmationContext } from '../contexts/AppContext';
 import { supabase } from '../supabaseClient';
 import { sendCommunityEmail, EmailTemplates } from '../utils/EmailService';
@@ -14,19 +14,21 @@ const PAYMENT_METHODS = [
     { id: 'cash', label: 'Cash (On-site)', icon: '💵', color: 'from-amber-500 to-yellow-600', hint: 'Visit the barangay hall to pay' },
 ];
 
-const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
+const Plans = ({ tenants: externalTenants = EMPTY_ARRAY, onPlanUpdate = () => { } } = {}) => {
     const { notify } = useContext(NotificationContext);
     const { confirmAction } = useContext(ConfirmationContext);
     const { currentTenant, currentRole } = useContext(TenantContext);
     const [plans, setPlans] = useState([]);
     const [tenants, setTenants] = useState(externalTenants);
     const [selectedTenantId, setSelectedTenantId] = useState('all');
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [isNewPlanOpen, setIsNewPlanOpen] = useState(false);
     const [userPlan, setUserPlan] = useState(null);
     const [newPlan, setNewPlan] = useState({ name: '', description: '', price: 0, features: '' });
     const [pendingRequests, setPendingRequests] = useState([]);
-    const [activeView, setActiveView] = useState('plans');
+    const [subscribers, setSubscribers] = useState([]);
+    const [residents, setResidents] = useState([]);
+    const [activeView, setActiveView] = useState((currentRole === 'Barangay Admin' || currentRole === 'Super Admin') ? 'requests' : 'plans');
 
     // Payment modal state
     const [paymentModal, setPaymentModal] = useState({ open: false, plan: null });
@@ -46,6 +48,8 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
         fetchUserPlan();
         if (currentRole === 'Barangay Admin' || currentRole === 'Super Admin' || currentRole === 'Barangay Captain') {
             fetchPendingRequests();
+            fetchSubscribers();
+            fetchResidents();
         }
     }, [currentTenant?.id, currentRole, selectedTenantId]);
 
@@ -70,14 +74,20 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
             const { data, error } = await query;
             if (error) throw error;
             if (!data || data.length === 0) {
+                // If DB is empty, use samples but mark them as mock
                 const samplePlans = [
-                    { id: 'p1', name: 'Standard Resident', price: 99, description: 'Basic access to barangay facilities and equipment.', features: JSON.stringify(['Facility Access', 'Standard Booking', 'Email Alerts']), tenant_id: selectedTenantId !== 'all' ? selectedTenantId : null },
-                    { id: 'p2', name: 'Premium Resident', price: 199, description: 'Priority booking and 24/7 support for all community assets.', features: JSON.stringify(['Priority Booking', 'Zero-wait Equipment', 'Strategic Alerts', 'Direct Admin Line']), tenant_id: selectedTenantId !== 'all' ? selectedTenantId : null },
-                    { id: 'p3', name: 'Business Enterprise', price: 499, description: 'Commercial-grade access for local business activities and events.', features: JSON.stringify(['Bulk Reservations', 'Event Logistics', 'Corporate Dashboard', 'Revenue Tracking']), tenant_id: selectedTenantId !== 'all' ? selectedTenantId : null }
+                    { id: 'p1', name: 'Standard Resident', price: 99, description: 'Basic access to community facilities.', features: JSON.stringify(['Facility Access', 'Standard Booking']), tenant_id: selectedTenantId !== 'all' ? selectedTenantId : null },
+                    { id: 'p2', name: 'Premium Resident', price: 199, description: 'Priority booking and 24/7 support.', features: JSON.stringify(['Priority Booking', 'Strategic Alerts']), tenant_id: selectedTenantId !== 'all' ? selectedTenantId : null }
                 ];
                 setPlans(samplePlans);
             } else {
-                setPlans(data);
+                // Harden against missing columns in older schemas
+                const hardenedData = data.map(p => ({
+                    ...p,
+                    description: p.description || 'Access to barangay services and community assets.',
+                    features: p.features || JSON.stringify(['Standard Access', 'Digital Ledger Sync'])
+                }));
+                setPlans(hardenedData);
             }
         } catch (err) {
             console.error('Fetch plans error:', err);
@@ -105,6 +115,48 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
         } catch (err) {
             const localRequests = JSON.parse(localStorage.getItem('brgy_plan_requests') || '[]').filter(r => r.status === 'Pending');
             setPendingRequests(localRequests);
+        }
+    };
+
+    const fetchSubscribers = async () => {
+        try {
+            let dbSubscribers = [];
+            let query = supabase
+                .from('resident_plans')
+                .select('*, plans(*), user_profiles(*)')
+                .eq('status', 'Active')
+                .order('approved_at', { ascending: false });
+
+            if (currentTenant?.id) {
+                query = query.eq('tenant_id', currentTenant.id);
+            }
+
+            const { data, error } = await query;
+            if (!error && data) dbSubscribers = data;
+
+            // Also load local active subscribers
+            const localRequests = JSON.parse(localStorage.getItem('brgy_plan_requests') || '[]')
+                .filter(r => r.status === 'Active');
+
+            setSubscribers([...dbSubscribers, ...localRequests]);
+        } catch (err) {
+            console.error('Fetch Subscribers Error:', err);
+            const localRequests = JSON.parse(localStorage.getItem('brgy_plan_requests') || '[]').filter(r => r.status === 'Active');
+            setSubscribers(localRequests);
+        }
+    };
+
+    const fetchResidents = async () => {
+        try {
+            let query = supabase.from('residents').select('*');
+            if (currentTenant?.id) query = query.eq('tenant_id', currentTenant.id);
+            else if (currentRole === 'Super Admin' && selectedTenantId !== 'all') query = query.eq('tenant_id', selectedTenantId);
+
+            const { data, error } = await query.order('name');
+            if (error) throw error;
+            setResidents(data || []);
+        } catch (err) {
+            console.error('Fetch Residents Error:', err);
         }
     };
 
@@ -209,6 +261,7 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
 
             notify('✅ Payment submitted! Awaiting Super Admin approval.', 'success');
             fetchPendingRequests();
+            onPlanUpdate();
         } catch (err) {
             console.error('Submit payment error:', err);
             notify('Failed to submit. Please try again.', 'error');
@@ -218,7 +271,7 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
     };
 
     const handleApprovePlan = async (requestId) => {
-        confirmAction('Approve Subscription?', 'Grant this subscriber full access to the requested plan tier?', async () => {
+        confirmAction('Approve This Plan?', 'Do you want to ACTIVATE this resident\'s subscription? They will be notified via email immediately.', async () => {
             try {
                 // Update local requests
                 const localRequests = JSON.parse(localStorage.getItem('brgy_plan_requests') || '[]');
@@ -246,6 +299,7 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
 
                 notify('Subscription approved successfully!', 'success');
                 fetchPendingRequests();
+                onPlanUpdate();
             } catch (err) {
                 notify('Approval failed. Please try again.', 'error');
             }
@@ -348,6 +402,12 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
                                     </span>
                                 )}
                             </button>
+                            <button
+                                onClick={() => setActiveView('subscribers')}
+                                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shrink-0 ${activeView === 'subscribers' ? 'bg-secondary text-white shadow-lg shadow-secondary/20 scale-105' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                <Users size={14} /> Resident Manager
+                            </button>
                         </div>
                     )}
 
@@ -372,6 +432,40 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
                     )}
                 </div>
             </header>
+
+            {/* BARANGAY SUBSCRIPTION (TENANT LEVEL) - Visible to Admins */}
+            {(currentRole === 'Barangay Admin' || currentRole === 'Captain') && currentTenant && activeView === 'plans' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-8 glass p-8 rounded-[2.5rem] border-primary/20 bg-primary/5 relative overflow-hidden"
+                >
+                    <div className="flex flex-col lg:flex-row justify-between items-center gap-8 relative z-10 text-center lg:text-left">
+                        <div>
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-4 border border-primary/20">
+                                <ShieldCheck size={14} /> BARANGAY PROTOCOL ACTIVE
+                            </div>
+                            <h2 className="text-3xl font-black text-white mb-2">{currentTenant.name} Node</h2>
+                            <p className="text-slate-400 text-sm max-w-xl">
+                                Your sector is currently operating on the <span className="text-primary font-bold">{currentTenant.plan || 'Professional'} Tier</span>.
+                                High-volume communities can upgrade to Enterprise for dedicated support and custom RLS protocols.
+                            </p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-4 shrink-0">
+                            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 min-w-[120px]">
+                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Current Plan</p>
+                                <p className="text-lg font-black text-white">{currentTenant.plan || 'Professional'}</p>
+                            </div>
+                            <button
+                                onClick={() => notify('Subscription Upgrade protocol initiated. Our command center will contact you shortly.', 'info')}
+                                className="px-8 py-4 bg-gradient-to-r from-primary to-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-primary/20 hover:scale-105 transition-all"
+                            >
+                                Upgrade Plan
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
 
             {userPlan && (
                 <motion.div
@@ -409,70 +503,151 @@ const Plans = ({ tenants: externalTenants = EMPTY_ARRAY } = {}) => {
                         </span>
                     </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {pendingRequests.map((req) => (
+                            <motion.div
+                                key={req.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="bg-[#1A2235]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-8 flex flex-col justify-between hover:border-primary/40 transition-all group relative overflow-hidden"
+                            >
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-[40px] pointer-events-none" />
+
+                                <div>
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-black text-xl shadow-inner border border-primary/20">
+                                            {(req.user_profiles?.email || req.user_email || 'R')[0].toUpperCase()}
+                                        </div>
+                                        <div className="overflow-hidden">
+                                            <h3 className="text-xl font-black text-white truncate">{req.user_profiles?.full_name || req.user_name || 'Resident'}</h3>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{req.user_profiles?.email || req.user_email}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4 mb-8">
+                                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Requested Tier</p>
+                                            <div className="flex items-center gap-2">
+                                                <Zap size={16} className="text-amber-500" />
+                                                <span className="text-white font-black">{req.plans?.name || req.plan_name}</span>
+                                            </div>
+                                        </div>
+
+                                        {req.payment_method && (
+                                            <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10">
+                                                <p className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] mb-1">Payment Method</p>
+                                                <p className="text-xs font-bold text-slate-300">💳 {req.payment_method.toUpperCase()} {req.payment_ref ? `· Ref: ${req.payment_ref}` : ''}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 mt-auto">
+                                    <button
+                                        onClick={() => handleRejectPlan(req.id)}
+                                        className="py-4 rounded-2xl bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 text-slate-400 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-all"
+                                    >
+                                        Deny
+                                    </button>
+                                    <button
+                                        onClick={() => handleApprovePlan(req.id)}
+                                        className="py-4 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all"
+                                    >
+                                        Approve
+                                    </button>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+            ) : activeView === 'subscribers' ? (
+                <div className="space-y-6">
+                    <div className="flex items-center justify-between px-8">
+                        <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                            <Users className="text-secondary" /> Resident Manager
+                        </h3>
+                        <span className="bg-secondary/10 text-secondary border border-secondary/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                            {residents.length} Total Registered
+                        </span>
+                    </div>
+
                     <div className="glass overflow-hidden rounded-[3rem] border border-white/5 shadow-2xl">
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b border-white/5 bg-white/5 text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">
-                                    <th className="px-8 py-6">Resident Identity</th>
-                                    <th className="px-8 py-6">Requested Tier</th>
-                                    <th className="px-8 py-6">Submission Hub</th>
-                                    <th className="px-8 py-6 text-right">Command Actions</th>
+                                    <th className="px-8 py-6">Resident Hub</th>
+                                    <th className="px-8 py-6">Current Plan Hub</th>
+                                    <th className="px-8 py-6">Verification Link</th>
+                                    <th className="px-8 py-6 text-right">Access Controls</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {pendingRequests.map((req) => (
-                                    <tr key={req.id} className="border-b border-white/5 hover:bg-white/5 transition-all group">
-                                        <td className="px-8 py-6">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black uppercase text-xs">
-                                                    {(req.user_profiles?.email || req.user_email || 'R')[0].toUpperCase()}
+                                {residents.map((res) => {
+                                    // Merge with plan data
+                                    const activePlan = subscribers.find(s => s.user_email === res.email || s.user_id === res.user_id);
+                                    const pendingPlan = pendingRequests.find(p => p.user_email === res.email || p.user_id === res.user_id);
+
+                                    return (
+                                        <tr key={res.id} className="border-b border-white/5 hover:bg-white/5 transition-all group">
+                                            <td className="px-8 py-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary font-black uppercase text-xs">
+                                                        {(res.name || 'R')[0]}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-white font-bold">{res.name}</p>
+                                                        <p className="text-[10px] text-slate-500 font-bold tracking-tight">{res.email}</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-white font-bold">{req.user_profiles?.full_name || req.user_name || 'Resident'}</p>
-                                                    <p className="text-[10px] text-slate-500 font-bold tracking-tight">{req.user_profiles?.email || req.user_email}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6">
-                                            <div className="flex items-center gap-2">
-                                                <Zap size={14} className="text-amber-500" />
-                                                <span className="text-white font-black text-sm">{req.plans?.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-white/5 px-3 py-1 rounded-full border border-white/10 w-fit">
-                                                    {req.tenant_id ? `Node: ${req.tenant_id.substring(0, 8)}` : 'Global'}
-                                                </span>
-                                                {req.payment_method && (
-                                                    <span className="text-[9px] font-bold text-amber-400 px-1">
-                                                        💳 {req.payment_method.toUpperCase()}{req.payment_ref ? ` · ${req.payment_ref}` : ''}
-                                                    </span>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                {activePlan ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Zap size={14} className="text-emerald-500" />
+                                                        <span className="text-emerald-400 font-black text-sm">{activePlan.plans?.name || activePlan.plan_name}</span>
+                                                    </div>
+                                                ) : pendingPlan ? (
+                                                    <div className="flex items-center gap-2 animate-pulse">
+                                                        <Clock size={14} className="text-amber-500" />
+                                                        <span className="text-amber-500 font-black text-sm">Awaiting Authorization</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-600 font-bold text-xs italic tracking-widest">NO ACTIVE PROTOCOL</span>
                                                 )}
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6 text-right">
-                                            <div className="flex items-center justify-end gap-3">
-                                                <button
-                                                    onClick={() => handleRejectPlan(req.id)}
-                                                    className="px-4 py-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all scale-90 group-hover:scale-100"
-                                                >
-                                                    Deny
-                                                </button>
-                                                <button
-                                                    onClick={() => handleApprovePlan(req.id)}
-                                                    className="px-6 py-2.5 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:scale-110 active:scale-95 transition-all"
-                                                >
-                                                    Authorize
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {pendingRequests.length === 0 && (
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <div className="flex flex-col gap-1">
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border w-fit ${res.status === 'Verified' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                                                        {res.status || 'UNVERIFIED'}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-6 text-right">
+                                                {pendingPlan ? (
+                                                    <button
+                                                        onClick={() => handleApprovePlan(pendingPlan.id)}
+                                                        className="px-6 py-2.5 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:scale-110 transition-all shadow-lg shadow-emerald-500/20"
+                                                    >
+                                                        Express Authorize
+                                                    </button>
+                                                ) : activePlan ? (
+                                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Verified Subscriber</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => notify('Direct Plan Provisioning protocol initiated.', 'info')}
+                                                        className="px-4 py-2 border border-primary/30 text-primary hover:bg-primary hover:text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                                                    >
+                                                        Provision Plan
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {residents.length === 0 && (
                                     <tr>
                                         <td colSpan="4" className="py-20 text-center text-slate-600 font-bold italic opacity-30">
-                                            No pending applications found in the ledger.
+                                            No residents detected in the sector registry.
                                         </td>
                                     </tr>
                                 )}

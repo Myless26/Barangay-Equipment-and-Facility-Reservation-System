@@ -1,7 +1,6 @@
 export const TENANTS = [
   { id: 'carmen', name: 'Barangay Carmen', color: '#2563eb' },
-  { id: 'macasandig', name: 'Barangay Macasandig', color: '#10b981' },
-  { id: 'balulang', name: 'Barangay Balulang', color: '#f59e0b' },
+  { id: 'gusa', name: 'Barangay Gusa', color: '#10b981' },
 ];
 
 export const ROLES = {

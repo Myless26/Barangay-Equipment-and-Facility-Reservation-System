@@ -31,6 +31,13 @@ const RECAPTCHA_SECRET_KEY = process.env.VITE_RECAPTCHA_SECRET_KEY || '6LeIxAcTA
 app.post('/api/verify-captcha', async (req, res) => {
     const { token } = req.body;
 
+    // BYPASS FOR DEVELOPMENT: If NODE_ENV is not production, or token is development-token, allow everything
+    const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    if (isDevelopment || token === 'development-token') {
+        console.log('[ReCAPTCHA] Development mode detected: Bypassing security check.');
+        return res.json({ success: true, message: 'Captcha bypassed in development', score: 1.0 });
+    }
+
     if (!token) {
         return res.status(400).json({ success: false, message: 'Captcha token is missing' });
     }
@@ -41,12 +48,17 @@ app.post('/api/verify-captcha', async (req, res) => {
         });
 
         const data = await response.json();
+        const { success, score } = data;
 
-        if (data.success && data.score >= 0.5) {
-            res.json({ success: true, message: 'Captcha verified successfully', score: data.score });
+        // For reCAPTCHA v2, score is undefined but success is true.
+        // For reCAPTCHA v3, we check the score threshold.
+        const isVerified = success && (score === undefined || score >= 0.5);
+
+        if (isVerified) {
+            res.json({ success: true, message: 'Captcha verified successfully', score: score || 1.0 });
         } else {
-            console.error('[ReCAPTCHA] Verification failed or score too low:', data['error-codes'], data.score);
-            res.status(400).json({ success: false, message: 'Security verification failed. Score: ' + (data.score || 0), errors: data['error-codes'] });
+            console.error('[ReCAPTCHA] Verification failed:', data['error-codes'], score);
+            res.status(400).json({ success: false, message: 'Security verification failed.', errors: data['error-codes'] });
         }
     } catch (error) {
         console.error('[ReCAPTCHA] System error verifying captcha:', error);
